@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EntityManager\EntityManager.csproj" />
+    <ProjectReference Include="..\Logger\Logger.csproj" />
   </ItemGroup>
 
 </Project>
