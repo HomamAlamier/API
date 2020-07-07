@@ -10,8 +10,11 @@ namespace EntityManager.DataTypes
         {
             Ping = 0x1,
             GetVersion = 0x10,
-            CreateUser = 0x11
+            CreateUser = 0x11,
+            LoginUser =  0x110
         }
+        public CommandType CmdType => ctype;
+        public byte[] Data => data;
 
         CommandType ctype;
         byte[] data;

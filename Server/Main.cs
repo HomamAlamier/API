@@ -9,18 +9,33 @@ using System.Security.Cryptography.X509Certificates;
 using EntityManager.DataTypes;
 using System.Security.Authentication;
 using System.Text;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using EntityManager.Enums;
 
 namespace API.Server
 {
+    public struct Session
+    {
+        public ulong ID;
+        public ulong uID;
+        public ulong Time;
+        public SslStream Stream;
+        public Socket Socket;
+    }
     public class Server
     {
         Socket _sock;
-        SslStream _stream;
         Log _log;
         X509Certificate2 _cert;
+        List<Session> sessions;
+        StorageManager store;
+        Thread pingThread;
         public Server()
         {
             _log = new Log("serverlog", Directories.Logs_Path);
+            sessions = new List<Session>();
             try
             {
                 _sock = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
@@ -29,6 +44,9 @@ namespace API.Server
                 _log.WriteLine($"Listening on port {ALL.MainPort}");
                 _sock.BeginAccept(BeginAccept, null);
                 _cert = new X509Certificate2(@"server.pfx", "password");
+                pingThread = new Thread(Handle_Ping);
+                pingThread.Start();
+                store = new StorageManager();
             }
             catch (Exception ex)
             {
@@ -37,6 +55,45 @@ namespace API.Server
             }
         }
 
+        private void Handle_Ping()
+        {
+            while (true)
+            {
+                for (int i = 0; i < sessions.Count; i++)
+                {
+                    if (sessions[i].Time == 0)
+                    {
+                        _log.WriteLine($"Connection ({(sessions[i].Socket.RemoteEndPoint as IPEndPoint).ToString()}) timed out ! disconnecting...");
+                        sessions[i].Stream.Close();
+                        sessions[i].Socket.Close();
+                        sessions.RemoveAt(i);
+                        break;
+                    }
+                    else
+                    {
+                        sendCommand(new Command(Command.CommandType.Ping, new byte[] { 0 })
+                                    , sessions[i].Stream);
+                        var s = sessions[i];
+                        s.Time--;
+                        sessions[i] = s;
+                    }
+                }
+                Thread.Sleep(1000);
+            }
+        }
+
+        void sendCommand(Command cmd, SslStream stream)
+        {
+            try
+            {
+                stream.Write(cmd.GetData());
+                stream.Flush();
+            }
+            catch (Exception ex)
+            {
+                _log.WriteLine(ex.ToString());
+            }
+        }
         private void BeginAccept(IAsyncResult ar)
         {
             try
@@ -44,13 +101,20 @@ namespace API.Server
                 Socket client = _sock.EndAccept(ar);
                 _log.WriteLine($"Accepting connection ({(client.RemoteEndPoint as IPEndPoint).ToString()})");
                 _log.WriteLine("Creating SSL Stream..");
-                _stream = new SslStream(new NetworkStream(client, true));
+                SslStream _stream = new SslStream(new NetworkStream(client, true));
                 _stream.AuthenticateAsServer(_cert, false, SslProtocols.Tls12, false);
                 if (_stream.IsAuthenticated)
                 {
                     _log.WriteLine($"SSL Stream : \r\n{'{'}\r\n\tIsAuthenticated: {_stream.IsAuthenticated.ToString()}\r\n\tIsEncrypted: {_stream.IsEncrypted.ToString()}\r\n{'}'}");
                     byte[] buffer = new byte[1024];
-                    _stream.BeginRead(buffer, 0, buffer.Length, StreamRead, buffer);
+                    sessions.Add(new Session()
+                    {
+                        ID = 0,
+                        uID = 0,
+                        Stream = _stream,
+                        Socket = client
+                    });
+                    _stream.BeginRead(buffer, 0, buffer.Length, StreamRead, new object[] { _stream, buffer, sessions.Count - 1 });
                 }
             }
             catch (Exception ex)
@@ -64,15 +128,49 @@ namespace API.Server
         {
             try
             {
-                byte[] buffer = (byte[])ar.AsyncState;
+                SslStream _stream = (SslStream)((object[])ar.AsyncState)[0];
+                byte[] buffer = (byte[])((object[])ar.AsyncState)[1];
+                int sIndex = (int)((object[])ar.AsyncState)[2];
                 int result = _stream.EndRead(ar);
                 _log.WriteLine($"Reading {result} bytes !");
                 if (result != 0)
                 {
                     var cmd = Command.Parse(buffer, 0, result);
-                    _log.WriteLine(cmd.ToString());
+                    switch (cmd.CmdType)
+                    {
+                        case Command.CommandType.Ping:
+                            {
+                                var s = sessions[sIndex];
+                                s.Time = 20;
+                                sessions[sIndex] = s;
+                            }
+                            break;
+                        case Command.CommandType.GetVersion:
+                            break;
+                        case Command.CommandType.CreateUser:
+                            {
+                                User usr = User.Parse(cmd.Data);
+                                switch (store.IsValidUser(usr))
+                                {
+                                    case 0:
+                                        store.StoreUser(usr);
+                                        sendCommand(new Command(Command.CommandType.CreateUser
+                                            , BitConverter.GetBytes((int)CreateUserError.Success)), _stream);
+                                        break;
+                                    case -1:
+                                        sendCommand(new Command(Command.CommandType.CreateUser
+                                            , BitConverter.GetBytes((int)CreateUserError.EmailIsNotValid)), _stream);
+                                        break;
+                                    case -2:
+                                        sendCommand(new Command(Command.CommandType.CreateUser
+                                            , BitConverter.GetBytes((int)CreateUserError.TagIsNotValid)), _stream);
+                                        break;
+                                }
+                            }
+                            break;
+                    }
                 }
-                _stream.BeginRead(buffer, 0, buffer.Length, StreamRead, buffer);
+                _stream.BeginRead(buffer, 0, buffer.Length, StreamRead, ar.AsyncState);
             }
             catch (Exception ex)
             {
