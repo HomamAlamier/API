@@ -10,4 +10,10 @@ namespace EntityManager.Enums
         TagIsNotValid = 0x10,
         Success = 0x0
     }
+    public enum Perm
+    {
+        NoBody = 0x0,
+        FriendOnly = 0x1,
+        All = 0x10
+    }
 }

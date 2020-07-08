@@ -26,6 +26,10 @@ namespace TEST
                     Console.WriteLine(c.CurrentUser);
                 }
             };
+            c.MessageReceive += (s, e) =>
+            {
+                Console.WriteLine(e.Message);
+            };
             c.Connect();
             Console.ReadKey();
             if (c.Connected)
@@ -39,17 +43,54 @@ namespace TEST
                 });
             }
             Console.ReadKey();
-            if (c.Connected)
+            Client c2 = new Client("127.0.0.1");
+            ulong id = 0;
+            c2.ConnectedSuccessfully += delegate
             {
-                c.CreateUser(new User()
+                c2.SendCommand(new Command(Command.CommandType.Ping, new byte[] { 90 }));
+            };
+            c2.CreateUserCallBack += (s, e) =>
+            {
+                Console.WriteLine($"CreateUserCallBack : ErrorCode = {e.Error.ToString()}.");
+                if (e.Error == EntityManager.Enums.CreateUserError.Success)
                 {
-                    Email = "test@dev.com",
+                    Console.WriteLine(c2.CurrentUser);
+                }
+            };
+            c2.UserInfoReceive += (s, e) =>
+            {
+                id = e.UserInfo.ID;
+                Console.WriteLine(e.UserInfo);
+            };
+            c2.MessageReceive += (s, e) =>
+            {
+                Console.WriteLine(e.Message);
+            };
+            c2.Connect();
+            Console.ReadKey();
+            if (c2.Connected)
+            {
+                c2.CreateUser(new User()
+                {
+                    Email = "test2@dev.com",
                     Password = "12345",
                     Name = "amr",
-                    Tag = "@amr123"
+                    Tag = "@amr222"
                 });
             }
-
+            Console.ReadKey();
+            c2.RequestUserInfo("@amr123");
+            Console.ReadKey();
+            c2.SendMessage(new Message()
+            {
+                From = c2.CurrentUser.ID,
+                To = id,
+                MessageID = 11,
+                ReplayMessageID = 0,
+                Time = DateTime.Now,
+                Content = "Hello World !"
+            });
+            Console.ReadKey();
         }
     }
 }

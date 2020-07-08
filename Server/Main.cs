@@ -21,6 +21,7 @@ namespace API.Server
         public ulong ID;
         public ulong uID;
         public ulong Time;
+        public bool Logined;
         public SslStream Stream;
         public Socket Socket;
     }
@@ -112,7 +113,8 @@ namespace API.Server
                         ID = 0,
                         uID = 0,
                         Stream = _stream,
-                        Socket = client
+                        Socket = client,
+                        Logined = false
                     });
                     _stream.BeginRead(buffer, 0, buffer.Length, StreamRead, new object[] { _stream, buffer, sessions.Count - 1 });
                 }
@@ -132,7 +134,7 @@ namespace API.Server
                 byte[] buffer = (byte[])((object[])ar.AsyncState)[1];
                 int sIndex = (int)((object[])ar.AsyncState)[2];
                 int result = _stream.EndRead(ar);
-                _log.WriteLine($"Reading {result} bytes !");
+                //_log.WriteLine($"Reading {result} bytes !");
                 if (result != 0)
                 {
                     var cmd = Command.Parse(buffer, 0, result);
@@ -153,7 +155,17 @@ namespace API.Server
                                 switch (store.IsValidUser(usr))
                                 {
                                     case 0:
-                                        store.StoreUser(usr);
+                                        usr.Privacy = new UserPrivacy()
+                                        {
+                                            Perm_CanGetInfo = Perm.All,
+                                            Perm_CanSeeBio = Perm.All,
+                                            Perm_CanSeePicture = Perm.All
+                                        };
+                                        int u = store.StoreUser(usr);
+                                        var s = sessions[sIndex];
+                                        s.uID = (ulong)u;
+                                        s.Logined = true;
+                                        sessions[sIndex] = s;
                                         sendCommand(new Command(Command.CommandType.CreateUser
                                             , BitConverter.GetBytes((int)CreateUserError.Success)), _stream);
                                         break;
@@ -165,6 +177,48 @@ namespace API.Server
                                         sendCommand(new Command(Command.CommandType.CreateUser
                                             , BitConverter.GetBytes((int)CreateUserError.TagIsNotValid)), _stream);
                                         break;
+                                }
+                            }
+                            break;
+                        case Command.CommandType.Message:
+                            {
+                                Message msg = Message.Parse(cmd.Data);
+                                if (msg.From != sessions[sIndex].uID || !sessions[sIndex].Logined) break;
+                                bool found = false;
+                                foreach (var item in sessions)
+                                {
+                                    if (item.Logined && item.uID == msg.To)
+                                    {
+                                        sendCommand(new Command(Command.CommandType.Message, cmd.Data), item.Stream);
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                                if (!found)
+                                {
+                                    store.StoreMessage(msg);
+                                }
+                            }
+                            break;
+                        case Command.CommandType.GetUserInfo:
+                            {
+                                string tag = Encoding.UTF8.GetString(cmd.Data);
+                                User usr = store.GetUser(tag);
+                                if (usr != null && usr.Privacy.Perm_CanGetInfo == Perm.All)
+                                {
+                                    if (usr.ID == sessions[sIndex].uID)
+                                    {
+                                        sendCommand(new Command(Command.CommandType.GetUserInfo, usr.Serialize()), _stream);
+                                    }
+                                    else
+                                    {
+                                        User tmp = new User();
+                                        tmp.ID = usr.ID;
+                                        tmp.Name = usr.Name;
+                                        tmp.ProfilePictureID = usr.ProfilePictureID;
+                                        tmp.Tag = usr.Tag;
+                                        sendCommand(new Command(Command.CommandType.GetUserInfo, tmp.Serialize()), _stream);
+                                    }
                                 }
                             }
                             break;

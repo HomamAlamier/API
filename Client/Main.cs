@@ -19,11 +19,29 @@ namespace API.Client
             Error = err;
         }
     }
+    public class UserInfoReceiveEventArgs : EventArgs
+    {
+        public User UserInfo { get; private set; }
+        public UserInfoReceiveEventArgs(User usr)
+        {
+            UserInfo = usr;
+        }
+    }
+    public class MessageReceiveEventArgs : EventArgs
+    {
+        public Message Message { get; private set; }
+        public MessageReceiveEventArgs(Message msg)
+        {
+            Message = msg;
+        }
+    }
     public class Client
     {
 
         public event EventHandler ConnectedSuccessfully;
         public event EventHandler<CreateUserEventArgs> CreateUserCallBack;
+        public event EventHandler<MessageReceiveEventArgs> MessageReceive;
+        public event EventHandler<UserInfoReceiveEventArgs> UserInfoReceive;
         public User CurrentUser => usr;
         public bool Connected => _sock.Connected;
 
@@ -73,6 +91,14 @@ namespace API.Client
             this.usr = user;
             SendCommand(new Command(Command.CommandType.CreateUser, user.Serialize()));
         }
+        public void SendMessage(Message message)
+        {
+            SendCommand(new Command(Command.CommandType.Message, message.Serialize()));
+        }
+        public void RequestUserInfo(string tag)
+        {
+            SendCommand(new Command(Command.CommandType.GetUserInfo, Encoding.UTF8.GetBytes(tag)));
+        }
         public void SendCommand(Command cmd)
         {
             try
@@ -95,7 +121,7 @@ namespace API.Client
                 int result = _stream.EndRead(ar);
                 if (result > 0)
                 {
-                    _log.WriteLine($"Received {result} bytes !");
+                    //_log.WriteLine($"Received {result} bytes !");
                     var cmd = Command.Parse(_buffer, 0, result);
                     switch (cmd.CmdType)
                     {
@@ -109,7 +135,27 @@ namespace API.Client
                         case Command.CommandType.CreateUser:
                             {
                                 int errcode = BitConverter.ToInt32(cmd.Data);
+                                if (errcode == (int)CreateUserError.Success)
+                                {
+                                    SendCommand(new Command(Command.CommandType.GetUserInfo, Encoding.UTF8.GetBytes(CurrentUser.Tag)));
+                                }
                                 CreateUserCallBack?.Invoke(this, new CreateUserEventArgs((CreateUserError)errcode));
+                            }
+                            break;
+                        case Command.CommandType.Message:
+                            {
+                                Message msg = Message.Parse(cmd.Data);
+                                MessageReceive?.Invoke(this, new MessageReceiveEventArgs(msg));
+                            }
+                            break;
+                        case Command.CommandType.GetUserInfo:
+                            {
+                                User usr = User.Parse(cmd.Data);
+                                if (usr.Tag == CurrentUser.Tag)
+                                {
+                                    this.usr = usr;
+                                }
+                                UserInfoReceive?.Invoke(this, new UserInfoReceiveEventArgs(usr));
                             }
                             break;
                     }

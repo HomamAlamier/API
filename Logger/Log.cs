@@ -14,8 +14,12 @@ namespace Logger
         int lnc = 1;
         public Log(string name, string path)
         {
-            if (File.Exists(path + name + ".txt")) File.Delete(path + name + ".txt");
-            fs = new FileStream(path + name + ".txt", FileMode.OpenOrCreate);
+            int x = 0;
+            while (File.Exists(path + name + x + ".txt"))
+            {
+                x++;
+            }
+            fs = new FileStream(path + name + x + ".txt", FileMode.OpenOrCreate);
             queue = new Queue<string>();
             io_manager = new Thread(io_manage);
             io_manager.Start();

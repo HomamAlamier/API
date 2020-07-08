@@ -8,10 +8,12 @@ namespace EntityManager.DataTypes
     {
         public enum CommandType
         {
-            Ping = 0x1,
-            GetVersion = 0x10,
-            CreateUser = 0x11,
-            LoginUser =  0x110
+            Ping        =  0x1,
+            GetVersion  =  0x10,
+            CreateUser  =  0x11,
+            LoginUser   =  0x110,
+            GetUserInfo =  0x111,
+            Message     =  0x1110
         }
         public CommandType CmdType => ctype;
         public byte[] Data => data;
