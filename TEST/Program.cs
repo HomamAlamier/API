@@ -43,6 +43,8 @@ namespace TEST
                 });
             }
             Console.ReadKey();
+            c.ChangePrivacySetting(EntityManager.Enums.PrivacySetting.CanGetInfo, EntityManager.Enums.Perm.NoBody);
+            Console.ReadKey();
             Client c2 = new Client("127.0.0.1");
             ulong id = 0;
             c2.ConnectedSuccessfully += delegate

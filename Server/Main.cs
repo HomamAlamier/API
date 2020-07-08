@@ -13,6 +13,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using EntityManager.Enums;
+using System.IO;
 
 namespace API.Server
 {
@@ -204,7 +205,7 @@ namespace API.Server
                             {
                                 string tag = Encoding.UTF8.GetString(cmd.Data);
                                 User usr = store.GetUser(tag);
-                                if (usr != null && usr.Privacy.Perm_CanGetInfo == Perm.All)
+                                if (usr != null)
                                 {
                                     if (usr.ID == sessions[sIndex].uID)
                                     {
@@ -213,13 +214,46 @@ namespace API.Server
                                     else
                                     {
                                         User tmp = new User();
+                                        if (usr.Privacy.Perm_CanGetInfo == Perm.All)
+                                        {
+                                            tmp.Name = usr.Name;
+                                            tmp.ProfilePictureID = usr.ProfilePictureID;
+                                        }
                                         tmp.ID = usr.ID;
-                                        tmp.Name = usr.Name;
-                                        tmp.ProfilePictureID = usr.ProfilePictureID;
                                         tmp.Tag = usr.Tag;
                                         sendCommand(new Command(Command.CommandType.GetUserInfo, tmp.Serialize()), _stream);
                                     }
                                 }
+                            }
+                            break;
+                        case Command.CommandType.ChangeUserPrivacy:
+                            {
+                                PrivacySetting setting;
+                                Perm value;
+                                using (MemoryStream ms = new MemoryStream(cmd.Data))
+                                {
+                                    ms.Seek(0, SeekOrigin.Begin);
+                                    byte[] tmp = new byte[4];
+                                    ms.Read(tmp, 0, 4);
+                                    setting = (PrivacySetting)BitConverter.ToInt32(tmp);
+                                    tmp = new byte[4];
+                                    ms.Read(tmp, 0, 4);
+                                    value = (Perm)BitConverter.ToInt32(tmp);
+                                }
+                                User usr = store.GetUser(sessions[sIndex].ID);
+                                switch (setting)
+                                {
+                                    case PrivacySetting.CanGetInfo:
+                                        usr.Privacy.Perm_CanGetInfo = value;
+                                        break;
+                                    case PrivacySetting.CanSeeProfilePicture:
+                                        usr.Privacy.Perm_CanSeePicture = value;
+                                        break;
+                                    case PrivacySetting.CanSeeBio:
+                                        usr.Privacy.Perm_CanSeeBio = value;
+                                        break;
+                                }
+                                sendCommand(new Command(Command.CommandType.ChangeUserPrivacy, new byte[1] { 1 }), _stream);
                             }
                             break;
                     }

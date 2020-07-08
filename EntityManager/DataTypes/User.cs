@@ -25,6 +25,19 @@ namespace EntityManager.DataTypes
         {
             List<byte> bts = new List<byte>();
             bts.AddRange(BitConverter.GetBytes(ID));
+            if (Privacy == null)
+            {
+                byte[] tmp = BitConverter.GetBytes(int.MaxValue);
+                bts.AddRange(tmp);
+                bts.AddRange(tmp);
+                bts.AddRange(tmp);
+            }
+            else
+            {
+                bts.AddRange(BitConverter.GetBytes((int)Privacy.Perm_CanGetInfo));
+                bts.AddRange(BitConverter.GetBytes((int)Privacy.Perm_CanSeePicture));
+                bts.AddRange(BitConverter.GetBytes((int)Privacy.Perm_CanSeeBio));
+            }
             byte[] emailBytes = Email == null ? new byte[] { 0 } : Encoding.UTF8.GetBytes(Email);
             byte[] passBytes = Password == null ? new byte[] { 0 } : Encoding.UTF8.GetBytes(Password);
             byte[] nameBytes = Name == null ? new byte[] { 0 } : Encoding.UTF8.GetBytes(Name);
@@ -45,12 +58,30 @@ namespace EntityManager.DataTypes
         public static User Parse(byte[] data)
         {
             User usr = new User();
+            
             using (MemoryStream ms = new MemoryStream(data))
             {
                 ms.Seek(0, SeekOrigin.Begin);
                 byte[] id = new byte[8];
                 ms.Read(id, 0, 8);
                 usr.ID = BitConverter.ToUInt64(id);
+                byte[] p = new byte[4];
+                ms.Read(p, 0, 4);
+                if (BitConverter.ToInt32(p) == int.MaxValue)
+                {
+                    ms.Seek(8, SeekOrigin.Current);
+                }
+                else
+                {
+                    usr.Privacy = new UserPrivacy();
+                    usr.Privacy.Perm_CanGetInfo = (Perm)BitConverter.ToInt32(p);
+                    p = new byte[4];
+                    ms.Read(p, 0, 4);
+                    usr.Privacy.Perm_CanSeePicture = (Perm)BitConverter.ToInt32(p);
+                    p = new byte[4];
+                    ms.Read(p, 0, 4);
+                    usr.Privacy.Perm_CanSeeBio = (Perm)BitConverter.ToInt32(p);
+                }
 
                 //Email
                 byte[] lenb = new byte[4];
@@ -96,7 +127,10 @@ namespace EntityManager.DataTypes
         }
         public override string ToString()
         {
-            return $"{'{'}\r\n\tName: {Name}\r\n\tEmail: {Email}\r\n\tPassword: {Password}\r\n\tTag: {Tag}\r\n\tProfilePictureID: {ProfilePictureID}\r\n\tID: {ID}\r\n{'}'}";
+            return $"{'{'}\r\n\tName: {Name}\r\n\tEmail: {Email}\r\n\tPassword: {Password}\r\n\tTag: {Tag}\r\n\tProfilePictureID: {ProfilePictureID}\r\n\tID: {ID}\r\n\t" +
+                (Privacy != null ? ($"Privacy: \r\n\t{'{'}\r\n\t\tPerm_CanGetInfo: {Privacy.Perm_CanGetInfo.ToString()}\r\n\t\tPerm_CanSeePicture: {Privacy.Perm_CanSeePicture.ToString()}" +
+                $"\r\n\t\tPerm_CanSeeBio: {Privacy.Perm_CanSeeBio.ToString()}\r\n\t{'}'}") : "") +
+                $"\r\n{'}'}";
         }
     }
 }

@@ -8,6 +8,7 @@ using EntityManager.DataTypes;
 using EntityManager.Enums;
 using System.Text;
 using System.IO;
+using System.Collections.Generic;
 
 namespace API.Client
 {
@@ -95,6 +96,13 @@ namespace API.Client
         {
             SendCommand(new Command(Command.CommandType.Message, message.Serialize()));
         }
+        public void ChangePrivacySetting(PrivacySetting setting, Perm value)
+        {
+            List<byte> bts = new List<byte>();
+            bts.AddRange(BitConverter.GetBytes((int)setting));
+            bts.AddRange(BitConverter.GetBytes((int)value));
+            SendCommand(new Command(Command.CommandType.ChangeUserPrivacy, bts.ToArray()));
+        }
         public void RequestUserInfo(string tag)
         {
             SendCommand(new Command(Command.CommandType.GetUserInfo, Encoding.UTF8.GetBytes(tag)));
@@ -156,6 +164,11 @@ namespace API.Client
                                     this.usr = usr;
                                 }
                                 UserInfoReceive?.Invoke(this, new UserInfoReceiveEventArgs(usr));
+                            }
+                            break;
+                        case Command.CommandType.ChangeUserPrivacy:
+                            {
+                                SendCommand(new Command(Command.CommandType.GetUserInfo, Encoding.UTF8.GetBytes(CurrentUser.Tag)));
                             }
                             break;
                     }

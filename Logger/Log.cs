@@ -31,7 +31,7 @@ namespace Logger
         public void Dispose()
         {
             stop = true;
-            io_manager.Abort();
+            io_manager.Join();
         }
         string lineNum()
         {

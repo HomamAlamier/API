@@ -25,7 +25,7 @@ namespace EntityManager.Consts
         {
             get
             {
-                var str = "Logs/";
+                var str = System.Environment.CurrentDirectory + "/Logs/";
                 if (!System.IO.Directory.Exists(str)) System.IO.Directory.CreateDirectory(str);
                 return str;
             }

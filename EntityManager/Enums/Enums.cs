@@ -16,4 +16,10 @@ namespace EntityManager.Enums
         FriendOnly = 0x1,
         All = 0x10
     }
+    public enum PrivacySetting
+    {
+        CanGetInfo = 0x0,
+        CanSeeProfilePicture = 0x1,
+        CanSeeBio = 0x10
+    }
 }

@@ -53,6 +53,17 @@ namespace API.Server
             }
             return null;
         }
+        public User GetUser(ulong id)
+        {
+            for (int i = 0; i < users.Count; i++)
+            {
+                if (users[i].ID == id)
+                {
+                    return users[i];
+                }
+            }
+            return null;
+        }
         public int IsValidUser(User usr)
         {
             foreach (var item in users)
