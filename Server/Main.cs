@@ -25,6 +25,10 @@ namespace API.Server
         public bool Logined;
         public SslStream Stream;
         public Socket Socket;
+        public static bool IsEmpty(Session session)
+            => session.Stream == null && session.Socket == null && session.uID == 0;
+
+
     }
     public class Server
     {
@@ -34,16 +38,16 @@ namespace API.Server
         List<Session> sessions;
         StorageManager store;
         Thread pingThread;
-        public Server()
+        public Server(bool log = true)
         {
-            _log = new Log("serverlog", Directories.Logs_Path);
+            _log = new Log("serverlog", Directories.Logs_Path, log);
             sessions = new List<Session>();
             try
             {
                 _sock = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
                 _sock.Bind(new IPEndPoint(IPAddress.Any, ALL.MainPort));
                 _sock.Listen(5);
-                _log.WriteLine($"Listening on port {ALL.MainPort}");
+                _log.WriteLineInfo($"Listening on port {ALL.MainPort}");
                 _sock.BeginAccept(BeginAccept, null);
                 _cert = new X509Certificate2(@"server.pfx", "password");
                 pingThread = new Thread(Handle_Ping);
@@ -52,7 +56,7 @@ namespace API.Server
             }
             catch (Exception ex)
             {
-                _log.WriteLine(ex.ToString());
+                _log.WriteLineError(ex);
                 _log.Dispose();
             }
         }
@@ -63,24 +67,25 @@ namespace API.Server
             {
                 for (int i = 0; i < sessions.Count; i++)
                 {
-                    if (sessions[i].Time == 0)
-                    {
-                        _log.WriteLine($"Connection ({(sessions[i].Socket.RemoteEndPoint as IPEndPoint).ToString()}) timed out ! disconnecting...");
-                        sessions[i].Stream.Close();
-                        sessions[i].Socket.Close();
-                        sessions.RemoveAt(i);
-                        break;
-                    }
-                    else
-                    {
-                        sendCommand(new Command(Command.CommandType.Ping, new byte[] { 0 })
-                                    , sessions[i].Stream);
-                        var s = sessions[i];
-                        s.Time--;
-                        sessions[i] = s;
-                    }
+                    if (!Session.IsEmpty(sessions[i]))
+                        if (sessions[i].Time == 0)
+                        {
+                            _log.WriteLineInfo($"Connection ({(sessions[i].Socket.RemoteEndPoint as IPEndPoint).ToString()}) timed out ! disconnecting...");
+                            sessions[i].Stream.Close();
+                            sessions[i].Socket.Close();
+                            sessions[i] = new Session();
+                            break;
+                        }
+                        else
+                        {
+                            sendCommand(new Command(Command.CommandType.Ping, new byte[] { 0 })
+                                        , sessions[i].Stream);
+                            var s = sessions[i];
+                            s.Time -= 5;
+                            sessions[i] = s;
+                        }
                 }
-                Thread.Sleep(1000);
+                Thread.Sleep(5000);
             }
         }
 
@@ -93,7 +98,7 @@ namespace API.Server
             }
             catch (Exception ex)
             {
-                _log.WriteLine(ex.ToString());
+                _log.WriteLineError(ex);
             }
         }
         private void BeginAccept(IAsyncResult ar)
@@ -101,28 +106,52 @@ namespace API.Server
             try
             {
                 Socket client = _sock.EndAccept(ar);
-                _log.WriteLine($"Accepting connection ({(client.RemoteEndPoint as IPEndPoint).ToString()})");
-                _log.WriteLine("Creating SSL Stream..");
+                _log.WriteLineInfo($"Accepting connection ({(client.RemoteEndPoint as IPEndPoint).ToString()})");
+                _log.WriteLineInfo("Creating SSL Stream..");
                 SslStream _stream = new SslStream(new NetworkStream(client, true));
                 _stream.AuthenticateAsServer(_cert, false, SslProtocols.Tls12, false);
                 if (_stream.IsAuthenticated)
                 {
-                    _log.WriteLine($"SSL Stream : \r\n{'{'}\r\n\tIsAuthenticated: {_stream.IsAuthenticated.ToString()}\r\n\tIsEncrypted: {_stream.IsEncrypted.ToString()}\r\n{'}'}");
+                    _log.WriteLineInfo($"SSL Stream : \r\n{'{'}\r\n\tIsAuthenticated: {_stream.IsAuthenticated.ToString()}\r\n\tIsEncrypted: {_stream.IsEncrypted.ToString()}\r\n{'}'}");
                     byte[] buffer = new byte[1024];
-                    sessions.Add(new Session()
+
+                    int sIndex = -1;
+                    for (int i = 0; i < sessions.Count; i++)
                     {
-                        ID = 0,
-                        uID = 0,
-                        Stream = _stream,
-                        Socket = client,
-                        Logined = false
-                    });
-                    _stream.BeginRead(buffer, 0, buffer.Length, StreamRead, new object[] { _stream, buffer, sessions.Count - 1 });
+                        if (Session.IsEmpty(sessions[i]))
+                        {
+                            sessions[i] = new Session()
+                            {
+                                ID = 0,
+                                uID = 0,
+                                Stream = _stream,
+                                Socket = client,
+                                Logined = false,
+                                Time = 20
+                            };
+                            sIndex = i;
+                            break;
+                        }
+                    }
+                    if (sIndex == -1)
+                    {
+                        sIndex = sessions.Count;
+                        sessions.Add(new Session()
+                        {
+                            ID = 0,
+                            uID = 0,
+                            Stream = _stream,
+                            Socket = client,
+                            Logined = false,
+                            Time = 20
+                        });
+                    }
+                    _stream.BeginRead(buffer, 0, buffer.Length, StreamRead, new object[] { _stream, buffer, sIndex });
                 }
             }
             catch (Exception ex)
             {
-                _log.WriteLine(ex.ToString());
+                _log.WriteLineError(ex);
             }
             _sock.BeginAccept(BeginAccept, null);
         }
@@ -256,13 +285,28 @@ namespace API.Server
                                 sendCommand(new Command(Command.CommandType.ChangeUserPrivacy, new byte[1] { 1 }), _stream);
                             }
                             break;
+                        case Command.CommandType.LoginUser:
+                            {
+                                User tmp = User.Parse(cmd.Data);
+                                User tmp2 = new User();
+                                var r = store.GetLogin(tmp, out tmp2);
+                                List<byte> bts = new List<byte>();
+                                bts.AddRange(BitConverter.GetBytes((int)r));
+                                if (r == LoginUserError.Success)
+                                {
+                                    bts.AddRange(tmp2.Serialize());
+                                }
+                                sendCommand(new Command(Command.CommandType.LoginUser, bts.ToArray()), _stream);
+                            }
+                            break;
                     }
                 }
-                _stream.BeginRead(buffer, 0, buffer.Length, StreamRead, ar.AsyncState);
+                if (!ar.CompletedSynchronously)
+                    _stream.BeginRead(buffer, 0, buffer.Length, StreamRead, ar.AsyncState);
             }
             catch (Exception ex)
             {
-                _log.WriteLine(ex.ToString());
+                _log.WriteLineError(ex);
             }
         }
     }

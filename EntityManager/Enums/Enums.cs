@@ -10,6 +10,12 @@ namespace EntityManager.Enums
         TagIsNotValid = 0x10,
         Success = 0x0
     }
+    public enum LoginUserError
+    {
+        AccountNotFound = 0x1,
+        IncorrectPassword = 0x10,
+        Success = 0x0
+    }
     public enum Perm
     {
         NoBody = 0x0,

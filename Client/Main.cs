@@ -20,6 +20,14 @@ namespace API.Client
             Error = err;
         }
     }
+    public class LoginUserEventArgs : EventArgs
+    {
+        public LoginUserError Error { get; private set; }
+        public LoginUserEventArgs(LoginUserError err)
+        {
+            Error = err;
+        }
+    }
     public class UserInfoReceiveEventArgs : EventArgs
     {
         public User UserInfo { get; private set; }
@@ -36,13 +44,14 @@ namespace API.Client
             Message = msg;
         }
     }
-    public class Client
+    public class Client : IDisposable
     {
 
         public event EventHandler ConnectedSuccessfully;
         public event EventHandler<CreateUserEventArgs> CreateUserCallBack;
         public event EventHandler<MessageReceiveEventArgs> MessageReceive;
         public event EventHandler<UserInfoReceiveEventArgs> UserInfoReceive;
+        public event EventHandler<LoginUserEventArgs> LoginUserCallBack;
         public User CurrentUser => usr;
         public bool Connected => _sock.Connected;
 
@@ -52,26 +61,37 @@ namespace API.Client
         byte[] _buffer;
         string _ip;
         User usr;
-        public Client(string ip)
+        bool logEn;
+        public Client(string ip, bool log = true)
         {
             _ip = ip;
+            logEn = log;
+        }
+        public void Dispose()
+        {
+            if (_sock != null && _sock.Connected)
+            {
+                _stream.Close();
+                _sock.Close();
+            }
+            _log.Dispose();
         }
         public void Connect()
         {
             try
             {
-                _log = new Log("client", Directories.Logs_Path);
+                _log = new Log("client", Directories.Logs_Path, logEn);
                 _sock = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
                 var ar = _sock.BeginConnect(new IPEndPoint(IPAddress.Parse(_ip), ALL.MainPort), null, null);
                 bool result = ar.AsyncWaitHandle.WaitOne(3000);
                 if (result)
                 {
-                    _log.WriteLine($"Connected to {_ip} !");
+                    _log.WriteLineInfo($"Connected to {_ip} !");
                     _stream = new SslStream(new NetworkStream(_sock, true), false, (e1, e2, e3, e4) => { return true; });
                     _stream.AuthenticateAsClient("localhost");
                     if (_stream.IsAuthenticated)
                     {
-                        _log.WriteLine($"SSL Stream : \r\n{'{'}\r\n\tIsAuthenticated: {_stream.IsAuthenticated.ToString()}\r\n\tIsEncrypted: {_stream.IsEncrypted.ToString()}\r\n{'}'}");
+                        _log.WriteLineInfo($"SSL Stream : \r\n{'{'}\r\n\tIsAuthenticated: {_stream.IsAuthenticated.ToString()}\r\n\tIsEncrypted: {_stream.IsEncrypted.ToString()}\r\n{'}'}");
                         _buffer = new byte[1024];
                         _stream.BeginRead(_buffer, 0, _buffer.Length, StreamRead, null);
                         ConnectedSuccessfully?.Invoke(this, new EventArgs());
@@ -79,12 +99,12 @@ namespace API.Client
                 }
                 else
                 {
-                    _log.WriteLine("Connection failed after 3 seconds !");
+                    _log.WriteLineError("Connection failed after 3 seconds !");
                 }
             }
             catch (Exception ex)
             {
-                _log.WriteLine(ex.ToString());
+                _log.WriteLineError(ex);
             }
         }
         public void CreateUser(User user)
@@ -107,6 +127,19 @@ namespace API.Client
         {
             SendCommand(new Command(Command.CommandType.GetUserInfo, Encoding.UTF8.GetBytes(tag)));
         }
+        public void Login()
+        {
+            Login(usr);
+        }
+        public void Login(User usr)
+        {
+            User tmp = new User()
+            {
+                Email = usr.Email,
+                Password = usr.Password
+            };
+            SendCommand(new Command(Command.CommandType.LoginUser, tmp.Serialize()));
+        }
         public void SendCommand(Command cmd)
         {
             try
@@ -119,7 +152,7 @@ namespace API.Client
             }
             catch (Exception ex)
             {
-                _log.WriteLine(ex.ToString());
+                _log.WriteLineError(ex);
             }
         }
         private void StreamRead(IAsyncResult ar)
@@ -171,14 +204,35 @@ namespace API.Client
                                 SendCommand(new Command(Command.CommandType.GetUserInfo, Encoding.UTF8.GetBytes(CurrentUser.Tag)));
                             }
                             break;
+                        case Command.CommandType.LoginUser:
+                            {
+                                int errcode = BitConverter.ToInt32(cmd.Data, 0);
+                                if (errcode == (int)LoginUserError.Success)
+                                {
+                                    byte[] tmp = new byte[cmd.Data.Length - 4];
+                                    Array.Copy(cmd.Data, 4, tmp, 0, tmp.Length);
+                                    User usr = User.Parse(tmp);
+                                    this.usr = usr;
+                                }
+                                LoginUserCallBack?.Invoke(this, new LoginUserEventArgs((LoginUserError)errcode));
+                            }
+                            break;
                     }
                 }
             }
             catch (Exception ex)
             {
-                _log.WriteLine(ex.ToString());
+                _log.WriteLineError(ex);
             }
-            _stream.BeginRead(_buffer, 0, _buffer.Length, StreamRead, ar.AsyncState);
+            try
+            {
+                if (!ar.CompletedSynchronously)
+                    _stream.BeginRead(_buffer, 0, _buffer.Length, StreamRead, null);
+            }
+            catch (Exception ex)
+            {
+                _log.WriteLineError(ex);
+            }
         }
     }
 }

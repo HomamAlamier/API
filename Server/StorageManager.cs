@@ -1,4 +1,6 @@
 ﻿using EntityManager.DataTypes;
+using EntityManager.Enums;
+using Logger;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -41,6 +43,26 @@ namespace API.Server
                     break;
                 }
             }
+        }
+        public LoginUserError GetLogin(User usr, out User usr2)
+        {
+            usr2 = null;
+            for (int i = 0; i < users.Count; i++)
+            {
+                if (users[i].Email == usr.Email)
+                {
+                    if (users[i].Password == usr.Password)
+                    {
+                        usr2 = users[i];
+                        return LoginUserError.Success;
+                    }
+                    else
+                    {
+                        return LoginUserError.IncorrectPassword;
+                    }
+                }
+            }
+            return LoginUserError.AccountNotFound;
         }
         public User GetUser(string tag)
         {
